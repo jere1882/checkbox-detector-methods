@@ -1,0 +1,8 @@
+matplotlib
+opencv-python
+ultralytics
+fastapi
+uvicorn[standard]
+python-multipart
+pillow
+
