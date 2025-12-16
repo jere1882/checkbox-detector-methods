@@ -1,0 +1,27 @@
+{
+  "image": "val6.jpg",
+  "width": 320,
+  "height": 155,
+  "predictions": [
+    {
+      "bbox": [
+        126.0,
+        88.0,
+        139.0,
+        101.0
+      ],
+      "class_id": 1,
+      "confidence": 1.0
+    },
+    {
+      "bbox": [
+        126.0,
+        66.0,
+        139.0,
+        79.0
+      ],
+      "class_id": 1,
+      "confidence": 1.0
+    }
+  ]
+}

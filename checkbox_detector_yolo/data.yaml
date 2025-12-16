@@ -3,5 +3,5 @@ train: train/images  # train images (relative to 'path') - 5 images
 val: val/images      # val images (relative to 'path') - 1 image
 
 names:
-  0: empty_checkbox
-  1: filled_checkbox
+    0: empty_checkbox
+    1: filled_checkbox
