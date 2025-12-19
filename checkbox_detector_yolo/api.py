@@ -1,15 +1,23 @@
 """
 FastAPI endpoint for checkbox detection using YOLO model
 """
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from ultralytics import YOLO
 import cv2
 import numpy as np
 import os
 from typing import Optional
 import tempfile
+import base64
+
+
+class PredictRequest(BaseModel):
+    """Request model for base64 image prediction (API Gateway compatible)"""
+    image: str  # base64 encoded image
+    conf: float = 0.2
 
 app = FastAPI(
     title="Checkbox Detection API",
@@ -58,7 +66,8 @@ async def root():
         "model_loaded": model is not None,
         "endpoints": {
             "health": "/health",
-            "predict": "/predict (POST)",
+            "predict": "/predict (POST with multipart file)",
+            "predict_json": "/predict/json (POST with base64 JSON - API Gateway compatible)",
             "predict_image": "/predict/image (POST)"
         }
     }
@@ -130,6 +139,78 @@ async def predict(file: UploadFile = File(...), conf: float = 0.2):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+@app.post("/predict/json")
+async def predict_json(request: PredictRequest):
+    """
+    Predict checkboxes using base64 encoded image (API Gateway compatible)
+    
+    Args:
+        request: JSON body with 'image' (base64 string) and optional 'conf' (float)
+    
+    Returns:
+        JSON with detection results
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+    
+    try:
+        # Decode base64 image
+        try:
+            image_data = base64.b64decode(request.image)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 image data")
+        
+        # Convert to numpy array and decode
+        nparr = np.frombuffer(image_data, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            raise HTTPException(status_code=400, detail="Could not decode image")
+        
+        # Run inference
+        results = model.predict(image, conf=request.conf, verbose=False)
+        result = results[0]
+        boxes = result.boxes
+        
+        # Extract detections
+        detections = []
+        class_names = {0: "empty_checkbox", 1: "filled_checkbox"}
+        
+        if len(boxes) > 0:
+            for i in range(len(boxes)):
+                box = boxes.xyxy[i].cpu().numpy()
+                conf_score = float(boxes.conf[i].cpu().numpy())
+                cls_id = int(boxes.cls[i].cpu().numpy())
+                
+                detections.append({
+                    "class": class_names[cls_id],
+                    "confidence": round(conf_score, 3),
+                    "bbox": {
+                        "x1": float(box[0]),
+                        "y1": float(box[1]),
+                        "x2": float(box[2]),
+                        "y2": float(box[3])
+                    }
+                })
+        
+        # Count by class
+        counts = {name: sum(1 for d in detections if d["class"] == name) 
+                 for name in class_names.values()}
+        
+        return JSONResponse({
+            "success": True,
+            "detections": detections,
+            "counts": counts,
+            "total": len(detections)
+        })
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
 
 @app.post("/predict/image")
 async def predict_image(file: UploadFile = File(...), conf: float = 0.2):

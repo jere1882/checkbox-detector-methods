@@ -5,4 +5,5 @@ fastapi
 uvicorn[standard]
 python-multipart
 pillow
+mangum
 

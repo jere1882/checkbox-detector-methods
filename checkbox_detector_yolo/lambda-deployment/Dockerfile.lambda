@@ -1,0 +1,33 @@
+FROM public.ecr.aws/lambda/python:3.9
+
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Install system dependencies for OpenCV
+# Amazon Linux uses yum and different package names
+RUN yum install -y \
+    mesa-libGL \
+    glib2 \
+    && yum clean all
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Install FastAPI dependencies and Mangum for Lambda
+RUN pip install --no-cache-dir fastapi uvicorn python-multipart pillow mangum
+
+# Copy application code
+COPY api.py .
+COPY lambda-deployment/lambda_handler.py lambda_handler.py
+
+# Copy model weights (if they exist locally)
+# Create directory structure first
+RUN mkdir -p ${LAMBDA_TASK_ROOT}/runs/detect/train/weights
+# Copy model weights - will fail if not present, but that's OK (can download from S3)
+COPY runs/detect/train/weights/best.pt ${LAMBDA_TASK_ROOT}/runs/detect/train/weights/best.pt
+# Ensure model file has proper read permissions
+RUN chmod 644 ${LAMBDA_TASK_ROOT}/runs/detect/train/weights/best.pt
+
+# Set the Lambda handler
+CMD [ "lambda_handler.lambda_handler" ]
+
