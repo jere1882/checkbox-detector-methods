@@ -2,6 +2,42 @@
 
 This repository contains a YOLOv11-based object detection model for detecting and classifying checkboxes (filled vs. unfilled) in scanned documents.
 
+![YOLO Detection Results](runs/detect/train2/real.jpg)
+
+![YOLO Architecture](docs/markdown_imgs/yolo_arch.webp)
+
+## Why YOLO?
+
+YOLO (You Only Look Once) was chosen for this checkbox detection task for several key reasons:
+
+### Speed and Real-time Performance
+YOLO processes entire images in a single forward pass, making it significantly faster than two-stage detectors (like R-CNN variants). This is crucial for document processing pipelines where speed matters.
+
+### End-to-End Detection and Classification
+Unlike traditional computer vision approaches that require separate steps for detection and classification, YOLO can simultaneously:
+- Detect checkbox locations (bounding boxes)
+- Classify them as filled or unfilled
+- All in a single neural network pass
+
+### Transfer Learning Benefits
+YOLOv11 comes with pretrained weights on large-scale datasets (COCO), allowing us to achieve good results with minimal training data. Our model was trained on just **5 annotated images** yet generalizes well thanks to transfer learning.
+
+![Darknet Architecture](docs/markdown_imgs/darknet.png)
+
+### Model Variants and Flexibility
+YOLO offers multiple model sizes (nano, small, medium, large, xlarge) allowing us to balance accuracy and inference speed based on deployment requirements. The YOLOv11n (nano) variant used here provides excellent performance with minimal computational overhead.
+
+![YOLO Model Variants](docs/markdown_imgs/models.png)
+
+### Production Ready
+The Ultralytics YOLO implementation provides:
+- Easy-to-use Python API
+- Docker containerization support
+- REST API integration (FastAPI)
+- Cross-platform compatibility (CPU/GPU)
+
+This makes YOLO ideal for both development and production deployment scenarios.
+
 ## Quick Start
 
 ### Inference
@@ -133,6 +169,40 @@ And then select kernel yolov11 when you run the notebooks.
 
 ## Deployment
 
+### Why Docker?
+
+YOLO uses Docker for several reasons:
+
+1. **Reproducibility**: PyTorch + CUDA versions must match exactly. Docker freezes the environment.
+2. **Deployment**: The FastAPI service can be deployed anywhere Docker runs.
+3. **Isolation**: Doesn't pollute your system Python with ML libraries.
+4. **GPU Support**: NVIDIA Container Toolkit enables GPU passthrough.
+
+### Docker Files
+
+```
+checkbox_detector_yolo/
+├── Dockerfile           # Builds the inference service image
+└── docker-compose.yml   # Orchestrates the service
+```
+
+#### Dockerfile Overview
+
+The Dockerfile creates a lightweight Python 3.9 image with:
+- OpenCV system dependencies (`libgl1-mesa-glx`)
+- Python dependencies from `requirements.txt`
+- FastAPI application code
+- Exposes port 8000 for the API
+
+#### docker-compose.yml Overview
+
+The compose file:
+- Builds the service from the Dockerfile
+- Maps port 8000 to host
+- Mounts model weights as read-only volume
+- Mounts dataset directory for access
+- Includes health check endpoint
+
 ### Docker Compose (Recommended)
 
 The easiest way to deploy the API service:
@@ -143,6 +213,10 @@ docker-compose up -d
 
 # Check logs
 docker-compose logs -f
+
+# Check health
+curl http://localhost:8000/health
+# {"status":"healthy","model_loaded":true}
 
 # Stop the service
 docker-compose down
@@ -160,6 +234,16 @@ docker run -d \
   --name checkbox-detector \
   checkbox-detector:latest
 ```
+
+### Advantages of Containerization
+
+| Advantage | Description |
+|-----------|-------------|
+| **Portability** | Runs on any machine with Docker (Linux, Mac, Windows WSL2) |
+| **Reproducibility** | Same environment in dev, CI, and production |
+| **Isolation** | No dependency conflicts with other projects |
+| **Easy deployment** | Push to registry → `docker pull` → `docker run` |
+| **Scalability** | Easy to scale horizontally with Kubernetes/Docker Swarm |
 
 ## API Usage
 
@@ -236,6 +320,54 @@ For production deployment, consider:
 5. **Resource Limits**: Set appropriate CPU/memory limits in Docker
 6. **Health Checks**: The container includes a health check endpoint
 
+## How Weights Are Loaded
+
+#### 1. Training Produces Weights
+
+After training (in `notebooks/train_and_visualize_prototype.ipynb`), weights are saved:
+```
+runs/detect/train/weights/
+├── best.pt    # Best checkpoint (lowest val loss)
+└── last.pt    # Final epoch checkpoint
+```
+
+#### 2. Inference Loads Weights
+
+**CLI Script (`test_inference.py`):**
+```python
+from ultralytics import YOLO
+
+# Default path
+model = YOLO("runs/detect/train/weights/best.pt")
+
+# Or custom path via --weights flag
+model = YOLO(args.weights)
+```
+
+**FastAPI (`api.py`):**
+```python
+MODEL_PATH = "runs/detect/train/weights/best.pt"
+
+@app.on_event("startup")
+async def load_model():
+    global model
+    model = YOLO(MODEL_PATH)  # Load once at startup
+```
+
+**Docker:**
+Weights are mounted as a volume, so you can update them without rebuilding:
+```yaml
+volumes:
+  - ./runs/detect/train/weights:/app/runs/detect/train/weights:ro
+```
+
+#### 3. Weight File Format
+
+- **Format**: PyTorch checkpoint (`.pt`)
+- **Size**: ~6MB (YOLOv11n backbone)
+- **Contents**: Model architecture + trained parameters
+- **Portability**: Works on any machine with `ultralytics` installed
+
 ## Troubleshooting
 
 ### Model Not Loading
@@ -255,4 +387,39 @@ ports:
 
 ### GPU Support
 
-For GPU acceleration, modify the Dockerfile to use `nvidia/cuda` base image and add GPU runtime flags to docker-compose.yml.
+#### Do You Need a GPU?
+
+| Task | GPU Required? | Notes |
+|------|---------------|-------|
+| **Training** | ✅ Recommended | Training on CPU is extremely slow (hours vs minutes) |
+| **Inference** | ❌ Optional | CPU inference works fine (~250ms per image) |
+| **Docker API** | ❌ Optional | Falls back to CPU automatically |
+
+#### GPU Inference (if available)
+
+The YOLO library auto-detects CUDA:
+```python
+from ultralytics import YOLO
+model = YOLO("best.pt")
+# Automatically uses GPU if available, CPU otherwise
+results = model.predict("image.jpg")
+```
+
+#### Force CPU
+
+```python
+results = model.predict("image.jpg", device="cpu")
+```
+
+#### GPU with Docker
+
+For GPU acceleration, modify the Dockerfile to use `nvidia/cuda` base image and add GPU runtime flags to docker-compose.yml:
+
+```yaml
+# docker-compose.yml
+services:
+  checkbox-detector-api:
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+```

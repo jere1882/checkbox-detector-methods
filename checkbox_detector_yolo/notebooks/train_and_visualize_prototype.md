@@ -16,10 +16,10 @@ Learned approached potentially offer a more robust and adaptable solution. The h
 ## Training data
 I annotated a tiny sample of 5 documents similar to original challenge image. The images and the annotations are in the subfolder `datasets/checkboxes`. Here is an example:
 
-![training_sample](datasets/checkboxes/train/images/d2.jpg)
+![training_sample](../data/train/images/d2.jpg)
 
 ## Validation data
-The challenge image, unseen during the training process, will be our validation sample.
+A number of unseen samples will work as the validation set
 
 # Training
 
@@ -56,7 +56,7 @@ results = model.train(data="data.yaml",
 
 Training succeeded! The training loss quickly dropped to very small values, which means the model has learned to fit the training dataset. The val loss is very close to the training lose, indicating good generalization.
 
-![loss](runs/detect/train/results.png)
+![loss](../runs/detect/train/results.png)
 
 
 # Validation on the challenge image
@@ -104,11 +104,11 @@ plt.show()
 
 
     
-![png](markdown_imgs/output_9_0.png)
+![png](../docs/markdown_imgs/output_9_0.png)
     
 
 
-![scores](runs/detect/train2/real.jpg)
+![scores](../runs/detect/train2/real.jpg)
 
 The previous results are using a scrict filter of confidence > 0.5. If we lower this threshold, we get spurious detections:
 
@@ -144,7 +144,7 @@ plt.show()
 
 
     
-![png](markdown_imgs/output_13_0.png)
+![png](../docs/markdown_imgs/output_13_0.png)
     
 
 
